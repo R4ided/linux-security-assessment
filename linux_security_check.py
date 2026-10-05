@@ -1,28 +1,20 @@
-```python
 #!/usr/bin/env python3
 
 import os
 import shutil
 import subprocess
-import sys
 import time
 
-# -----------------------------
-# Terminal colors
-# -----------------------------
+results = []
 
+# Colors
 RESET = "\033[0m"
 BOLD = "\033[1m"
-
-RED = "\033[91m"
 GREEN = "\033[92m"
 YELLOW = "\033[93m"
+RED = "\033[91m"
 CYAN = "\033[96m"
 BLUE = "\033[94m"
-WHITE = "\033[97m"
-
-
-results = []
 
 
 def clear_screen():
@@ -31,30 +23,29 @@ def clear_screen():
 
 def banner():
     print(CYAN + BOLD)
-    print("╔══════════════════════════════════════════════════════╗")
-    print("║            LINUX SECURITY ASSESSMENT                ║")
-    print("║                  Security Audit                     ║")
-    print("╚══════════════════════════════════════════════════════╝")
+    print("╔══════════════════════════════════════════════╗")
+    print("║        LINUX SECURITY ASSESSMENT            ║")
+    print("║              SECURITY AUDIT                  ║")
+    print("╚══════════════════════════════════════════════╝")
     print(RESET)
 
 
 def section(title):
     print()
-    print(BLUE + BOLD + f"── {title} " + "─" * (48 - len(title)) + RESET)
-
-
-def status_line(status, name):
-    if status == "PASS":
-        print(f"  {GREEN}✔ PASS{RESET}   {name}")
-    elif status == "WARN":
-        print(f"  {YELLOW}⚠ WARN{RESET}   {name}")
-    elif status == "FAIL":
-        print(f"  {RED}✖ FAIL{RESET}   {name}")
+    print(BLUE + BOLD + f"── {title} ──────────────────────────────" + RESET)
 
 
 def add_result(name, status, message=""):
     results.append((name, status))
-    status_line(status, name)
+
+    if status == "PASS":
+        symbol = GREEN + "✔ PASS" + RESET
+    elif status == "WARN":
+        symbol = YELLOW + "⚠ WARN" + RESET
+    else:
+        symbol = RED + "✖ FAIL" + RESET
+
+    print(f"  {symbol}   {name}")
 
     if message:
         print(f"           {message}")
@@ -67,15 +58,9 @@ def run_command(command):
             capture_output=True,
             text=True
         )
-    except FileNotFoundError:
-        return None
     except Exception:
         return None
 
-
-# -----------------------------
-# Security checks
-# -----------------------------
 
 def check_updates():
     section("SYSTEM UPDATES")
@@ -84,16 +69,16 @@ def check_updates():
         result = run_command(["apt", "list", "--upgradable"])
 
         if result and result.returncode == 0:
-            lines = [
+            packages = [
                 line for line in result.stdout.splitlines()
-                if "/" in line and "Listing..." not in line
+                if "/" in line and "Listing" not in line
             ]
 
-            if lines:
+            if packages:
                 add_result(
                     "System updates",
                     "WARN",
-                    f"{len(lines)} package(s) may need updates."
+                    f"{len(packages)} update(s) available."
                 )
             else:
                 add_result("System updates", "PASS")
@@ -102,14 +87,13 @@ def check_updates():
             add_result(
                 "System updates",
                 "WARN",
-                "Could not check for available updates."
+                "Could not check for updates."
             )
-
     else:
         add_result(
             "System updates",
             "WARN",
-            "APT package manager was not found."
+            "APT was not found."
         )
 
 
@@ -120,59 +104,63 @@ def check_firewall():
         result = run_command(["ufw", "status"])
 
         if result and "Status: active" in result.stdout:
-            add_result("Firewall status", "PASS", "UFW is active.")
-
+            add_result(
+                "Firewall",
+                "PASS",
+                "UFW firewall is active."
+            )
         else:
             add_result(
-                "Firewall status",
+                "Firewall",
                 "WARN",
-                "UFW does not appear to be active."
+                "UFW is not active."
             )
 
     elif shutil.which("firewall-cmd"):
         result = run_command(["firewall-cmd", "--state"])
 
         if result and result.stdout.strip() == "running":
-            add_result("Firewall status", "PASS", "firewalld is running.")
-
+            add_result(
+                "Firewall",
+                "PASS",
+                "firewalld is running."
+            )
         else:
             add_result(
-                "Firewall status",
+                "Firewall",
                 "WARN",
-                "firewalld does not appear to be running."
+                "firewalld is not running."
             )
 
     else:
         add_result(
-            "Firewall status",
+            "Firewall",
             "WARN",
-            "No supported firewall command was found."
+            "No supported firewall was found."
         )
 
 
 def check_ports():
-    section("NETWORK")
+    section("LISTENING PORTS")
 
     result = run_command(["ss", "-lntu"])
 
     if result and result.returncode == 0:
         lines = result.stdout.strip().splitlines()
-
-        # Remove header
         ports = lines[1:] if len(lines) > 1 else []
 
         add_result(
             "Listening ports",
             "PASS",
-            f"{len(ports)} listening endpoint(s) detected."
+            f"{len(ports)} listening endpoint(s) found."
         )
 
-        print()
-        print(CYAN + "  Listening endpoints:" + RESET)
+        if ports:
+            print()
+            print(CYAN + "  Listening endpoints:" + RESET)
 
-        for line in ports:
-            print("   ", line)
-
+            for port in ports:
+                print("    " + port)
     else:
         add_result(
             "Listening ports",
@@ -197,8 +185,7 @@ def check_ssh():
     result = run_command([
         "grep",
         "-Ei",
-        r"^[[:space:]]*(PermitRootLogin|PasswordAuthentication|PubkeyAuthentication)"
-        ,
+        r"^[[:space:]]*(PermitRootLogin|PasswordAuthentication|PubkeyAuthentication)",
         path
     ])
 
@@ -206,13 +193,11 @@ def check_ssh():
         add_result(
             "SSH configuration",
             "PASS",
-            "SSH configuration directives were found."
+            "SSH configuration directives found."
         )
 
-        print()
         for line in result.stdout.splitlines():
             print("      " + line)
-
     else:
         add_result(
             "SSH configuration",
@@ -226,7 +211,7 @@ def check_root():
 
     if not shutil.which("passwd"):
         add_result(
-            "Root login",
+            "Root account",
             "WARN",
             "passwd command was not found."
         )
@@ -239,20 +224,19 @@ def check_root():
 
         if " L " in output:
             add_result(
-                "Root login",
+                "Root account",
                 "PASS",
-                "Root account appears locked."
+                "Root account appears to be locked."
             )
         else:
             add_result(
-                "Root login",
+                "Root account",
                 "WARN",
                 "Root account may be enabled."
             )
-
     else:
         add_result(
-            "Root login",
+            "Root account",
             "WARN",
             "Could not determine root account status."
         )
@@ -279,24 +263,21 @@ def check_users():
         add_result(
             "User accounts",
             "PASS",
-            f"{len(users)} regular user account(s) detected."
+            f"{len(users)} regular user account(s) found."
         )
 
-        if users:
-            print()
-            for user in users:
-                print(f"      • {user}")
-
+        for user in users:
+            print(f"      • {user}")
     else:
         add_result(
             "User accounts",
             "WARN",
-            "Could not inspect local user accounts."
+            "Could not inspect user accounts."
         )
 
 
 def check_sudo():
-    section("PRIVILEGE ACCESS")
+    section("SUDO ACCESS")
 
     if not shutil.which("sudo"):
         add_result(
@@ -312,13 +293,13 @@ def check_sudo():
         add_result(
             "Sudo access",
             "PASS",
-            "Current user has non-interactive sudo access."
+            "Current user has sudo access."
         )
     else:
         add_result(
             "Sudo access",
             "WARN",
-            "Sudo may require authentication or may be unavailable."
+            "Sudo requires authentication or is unavailable."
         )
 
 
@@ -330,27 +311,27 @@ def check_permissions():
 
         if mode & 0o007:
             add_result(
-                "Shadow file permissions",
+                "Shadow permissions",
                 "FAIL",
                 "/etc/shadow is accessible by other users."
             )
         else:
             add_result(
-                "Shadow file permissions",
+                "Shadow permissions",
                 "PASS",
-                "No permissions for 'others' detected."
+                "/etc/shadow is not accessible by others."
             )
 
     except OSError:
         add_result(
-            "Shadow file permissions",
+            "Shadow permissions",
             "WARN",
             "Could not inspect /etc/shadow."
         )
 
 
 def check_services():
-    section("SYSTEM SERVICES")
+    section("ENABLED SERVICES")
 
     if not shutil.which("systemctl"):
         add_result(
@@ -377,9 +358,8 @@ def check_services():
         add_result(
             "Enabled services",
             "PASS",
-            f"{len(services)} enabled service(s) detected."
+            f"{len(services)} enabled service(s) found."
         )
-
     else:
         add_result(
             "Enabled services",
@@ -414,25 +394,18 @@ def check_logs():
         )
 
         print()
-        print(CYAN + "  Recent log entries:" + RESET)
-
         for line in result.stdout.splitlines():
             print("      " + line)
-
     else:
         add_result(
             "Security logs",
             "WARN",
-            "Could not read recent system logs."
+            "Could not read system logs."
         )
 
 
-# -----------------------------
-# Summary
-# -----------------------------
-
 def final_summary():
-    section("FINAL SECURITY SUMMARY")
+    section("FINAL SUMMARY")
 
     passed = sum(status == "PASS" for _, status in results)
     warnings = sum(status == "WARN" for _, status in results)
@@ -440,46 +413,39 @@ def final_summary():
 
     total = len(results)
 
-    if failed:
-        score = max(0, int((passed / total) * 100))
-        rating = RED + "CRITICAL" + RESET
-
-    elif warnings:
+    if total > 0:
         score = int((passed / total) * 100)
-        rating = YELLOW + "NEEDS REVIEW" + RESET
-
     else:
-        score = 100
+        score = 0
+
+    if failed:
+        rating = RED + "CRITICAL" + RESET
+    elif warnings:
+        rating = YELLOW + "NEEDS REVIEW" + RESET
+    else:
         rating = GREEN + "GOOD" + RESET
 
     print()
-    print("  ┌──────────────────────────────────────┐")
-    print(f"  │ Security Score: {score:>3}%               │")
-    print("  ├──────────────────────────────────────┤")
-    print(f"  │ {GREEN}PASS{RESET}: {passed:<3}                           │")
-    print(f"  │ {YELLOW}WARN{RESET}: {warnings:<3}                           │")
-    print(f"  │ {RED}FAIL{RESET}: {failed:<3}                           │")
-    print("  ├──────────────────────────────────────┤")
-    print(f"  │ Rating: {rating:<26} │")
-    print("  └──────────────────────────────────────┘")
-
+    print("  ╔══════════════════════════════════════╗")
+    print(f"  ║ Security Score: {score:>3}%              ║")
+    print("  ╠══════════════════════════════════════╣")
+    print(f"  ║ PASS: {passed:<3}                           ║")
+    print(f"  ║ WARN: {warnings:<3}                           ║")
+    print(f"  ║ FAIL: {failed:<3}                           ║")
+    print("  ╠══════════════════════════════════════╣")
+    print(f"  ║ Rating: {rating:<24} ║")
+    print("  ╚══════════════════════════════════════╝")
     print()
-    print("  " + CYAN + "Assessment complete." + RESET)
+    print(CYAN + "  Assessment complete." + RESET)
     print()
 
-
-# -----------------------------
-# Main
-# -----------------------------
 
 def main():
     clear_screen()
     banner()
 
     print("  Starting security assessment...")
-    print()
-
-    time.sleep(0.5)
+    time.sleep(1)
 
     check_updates()
     check_firewall()
@@ -497,14 +463,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-```
-
-
-
-
-
-
-
-
-
-
